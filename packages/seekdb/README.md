@@ -18,7 +18,6 @@ For complete usage, please refer to the official documentation.
 [Installation](#installation)<br/>
 [Quick Start](#quick-start)<br/>
 [Usage Guide](#usage-guide)<br/>
-[Execute raw SQL](#execute-raw-sql)<br/>
 [Vector search + relational tables](#vector-search--relational-tables)<br/>
 [Integration with ORM](#integration-with-orm)<br/>
 [Database Management](#database-management)<br/>
@@ -393,20 +392,6 @@ const collection = await client.createCollection({
   },
   embeddingFunction: customEmbed,
 });
-```
-
-### Execute raw SQL
-
-The client supports executing raw SQL in the current database/session (both embedded and server mode). Returns rows as an array of objects (or `null` when there is no result set).
-
-```typescript
-const rows = await client.execute("SELECT 1 AS one");
-// rows: [{ one: 1 }] or null
-
-const rows2 = await client.execute(
-  "SELECT * FROM information_schema.tables LIMIT ?",
-  [5]
-);
 ```
 
 ### Vector search + relational tables
