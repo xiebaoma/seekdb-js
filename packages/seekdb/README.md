@@ -687,18 +687,18 @@ const merged = ids.map((id) => ({
 
 ### Integration with ORM
 
-Use seekdb-js for vector/full-text/hybrid search and an ORM (Drizzle or Prisma) for type-safe relational tables. seekdb is **MySQL-compatible** in both Server and Embedded mode. **Drizzle**: in Server mode create a mysql2 connection with the same DB config and pass it to `drizzle-orm/mysql2` (same database, two connections); in **Embedded mode** use `drizzle-orm/mysql-proxy` with a callback that calls `client.execute()` and maps to `{ rows }` (see `examples/seekdb-drizzle/index-embedded.ts`). **Prisma**: in Server mode use DATABASE_URL (same database, two connections); in **Embedded mode** use the [@seekdb/prisma-adapter](https://www.npmjs.com/package/@seekdb/prisma-adapter) so Prisma runs SQL via `client.execute()` (see `examples/seekdb-prisma/index-embedded.ts`).
+Use seekdb-js for vector/full-text/hybrid search and an ORM (Drizzle or Prisma) for type-safe relational tables. seekdb is MySQL-compatible in both modes. **Server mode**: same database, two connections (SeekdbClient + ORM). **Embedded mode**: Drizzle uses `drizzle-orm/mysql-proxy` with a callback around `client.execute()`; Prisma uses [@seekdb/prisma-adapter](https://www.npmjs.com/package/@seekdb/prisma-adapter).
 
-#### With Drizzle (Server: same DB two connections; Embedded: mysql-proxy)
+#### Drizzle
 
-**Server mode**: Create a mysql2 connection with the same host/port/user/password/database as SeekdbClient and pass it to Drizzle (same database, two connections):
+**Server mode**: Create a mysql2 connection with the same DB config as SeekdbClient and pass it to `drizzle(conn)`.
 
 ```typescript
 import { createConnection } from "mysql2/promise";
 import { SeekdbClient } from "seekdb";
 import { drizzle } from "drizzle-orm/mysql2";
 import { inArray } from "drizzle-orm";
-import { users } from "./schema"; // your relational table (mysqlTable), no vector tables
+import { users } from "./schema"; // mysqlTable, relational only; vector tables via Collection
 
 const dbConfig = {
   host: "127.0.0.1",
@@ -707,7 +707,6 @@ const dbConfig = {
   password: "",
   database: "test",
 };
-
 const client = new SeekdbClient(dbConfig);
 const conn = await createConnection(dbConfig);
 const db = drizzle(conn);
@@ -719,20 +718,15 @@ const result = await collection.hybridSearch({
   nResults: 5,
 });
 const ids = result.ids?.flat().filter(Boolean) ?? [];
-
 const usersList = await db.select().from(users).where(inArray(users.id, ids));
-
 // when done: await conn.end(); await client.close();
 ```
 
-**Embedded mode**: Use Drizzle's mysql-proxy driver with a callback that runs SQL via `client.execute()` and maps results to `{ rows }`. See `examples/seekdb-drizzle/index-embedded.ts` for a full runnable sample.
+**Embedded mode**: Use `drizzle-orm/mysql-proxy` with a callback that runs SQL via `client.execute()` and returns `{ rows }`. See [seekdb-drizzle](https://github.com/oceanbase/seekdb-js/blob/main/examples/seekdb-drizzle/index-embedded.ts) for a runnable sample.
 
-- Schema: define only **relational tables** with `mysqlTable`; vector tables are managed by seekdb Collection.
-- See `examples/seekdb-drizzle/` for a runnable sample.
+#### Prisma
 
-#### With Prisma (same database, two connections)
-
-Use **same database, two connections**: one SeekdbClient, one PrismaClient (via `DATABASE_URL`). Vector search with seekdb, then query relational by ids with Prisma.
+**Server mode**: Use SeekdbClient and PrismaClient with `DATABASE_URL` pointing to the same database.
 
 ```typescript
 import { SeekdbClient } from "seekdb";
@@ -745,8 +739,7 @@ const client = new SeekdbClient({
   password: "",
   database: "test",
 });
-
-const prisma = new PrismaClient(); // uses DATABASE_URL="mysql://root:@127.0.0.1:2881/test"
+const prisma = new PrismaClient(); // DATABASE_URL="mysql://root:@127.0.0.1:2881/test"
 
 const collection = await client.getCollection({ name: "docs" });
 const result = await collection.hybridSearch({
@@ -755,19 +748,13 @@ const result = await collection.hybridSearch({
   nResults: 5,
 });
 const ids = result.ids?.flat().filter(Boolean) ?? [];
-
-const users = await prisma.user.findMany({
-  where: { id: { in: ids } },
-});
-
-// merge vector results with users as needed
-await client.close();
-await prisma.$disconnect();
+const users = await prisma.user.findMany({ where: { id: { in: ids } } });
+// merge as needed; when done: await client.close(); await prisma.$disconnect();
 ```
 
-- Set `DATABASE_URL` to the same host/port/user/password/database as SeekdbClient (e.g. `mysql://user:password@host:port/database`). For OceanBase tenant, see your Prisma/MySQL docs.
-- **Embedded mode**: use the [@seekdb/prisma-adapter](https://www.npmjs.com/package/@seekdb/prisma-adapter) and `PrismaClient({ adapter })` so Prisma runs SQL via `client.execute()`; run `pnpm run start:embedded` in `examples/seekdb-prisma/`.
-- See `examples/seekdb-prisma/` for runnable samples (Server and Embedded).
+Set `DATABASE_URL` to the same host/port/user/password/database (e.g. `mysql://user:password@host:port/database`). OceanBase: see Prisma/MySQL tenant docs.
+
+**Embedded mode**: Use [@seekdb/prisma-adapter](https://www.npmjs.com/package/@seekdb/prisma-adapter) with `PrismaClient({ adapter })` so Prisma runs SQL via `client.execute()`. See [seekdb-prisma](https://github.com/oceanbase/seekdb-js/blob/main/examples/seekdb-prisma/index-embedded.ts); run `pnpm run start:embedded` in that example.
 
 ### Database Management
 
