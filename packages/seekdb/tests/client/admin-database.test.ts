@@ -7,11 +7,7 @@ import { describe, test, expect, beforeAll, afterAll, vi } from "vitest";
 import { SeekdbAdminClient } from "../../src/client-admin.js";
 import { OBDatabase, Database } from "../../src/database.js";
 import { DEFAULT_TENANT } from "../../src/utils.js";
-import {
-  TEST_CONFIG,
-  TEST_CONFIG_OB,
-  generateDatabaseName,
-} from "../test-utils.js";
+import { TEST_CONFIG, generateDatabaseName } from "../test-utils.js";
 
 describe("AdminClient Database Management", () => {
   let adminClient: SeekdbAdminClient;
@@ -314,7 +310,10 @@ describe("AdminClient Database Management", () => {
     let obAdminClient: SeekdbAdminClient;
 
     beforeAll(async () => {
-      obAdminClient = new SeekdbAdminClient(TEST_CONFIG_OB);
+      obAdminClient = new SeekdbAdminClient({
+        ...TEST_CONFIG,
+        tenant: DEFAULT_TENANT,
+      });
     });
 
     afterAll(async () => {
@@ -328,7 +327,7 @@ describe("AdminClient Database Management", () => {
       const db = await obAdminClient.getDatabase(testDbName);
       expect(db.name).toBe(testDbName);
       expect(db).toBeInstanceOf(OBDatabase);
-      expect((db as OBDatabase).tenant).toBe(TEST_CONFIG_OB.tenant);
+      expect((db as OBDatabase).tenant).toBe(DEFAULT_TENANT);
 
       await obAdminClient.deleteDatabase(testDbName);
     });
@@ -337,7 +336,7 @@ describe("AdminClient Database Management", () => {
       const databases = await obAdminClient.listDatabases();
       for (const db of databases) {
         expect(db).toBeInstanceOf(OBDatabase);
-        expect((db as OBDatabase).tenant).toBe(TEST_CONFIG_OB.tenant);
+        expect((db as OBDatabase).tenant).toBe(DEFAULT_TENANT);
       }
     });
 
@@ -355,14 +354,14 @@ describe("AdminClient Database Management", () => {
         // Verify warning was issued
         expect(warnSpy).toHaveBeenCalledWith(
           expect.stringContaining(
-            `Specified tenant '${differentTenant}' differs from client tenant '${TEST_CONFIG_OB.tenant}', using client tenant`
+            `Specified tenant '${differentTenant}' differs from client tenant '${DEFAULT_TENANT}', using client tenant`
           )
         );
 
         // Verify database was created with client tenant
         const db = await obAdminClient.getDatabase(testDbName, differentTenant);
         expect(db).toBeInstanceOf(OBDatabase);
-        expect((db as OBDatabase).tenant).toBe(TEST_CONFIG_OB.tenant); // Should use client tenant, not specified tenant
+        expect((db as OBDatabase).tenant).toBe(DEFAULT_TENANT); // Should use client tenant, not specified tenant
 
         // Verify warning was issued again for getDatabase
         expect(warnSpy).toHaveBeenCalledTimes(2);
@@ -388,7 +387,7 @@ describe("AdminClient Database Management", () => {
         // Get database - should use client tenant
         const db = await obAdminClient.getDatabase(testDbName);
         expect(db).toBeInstanceOf(OBDatabase);
-        expect((db as OBDatabase).tenant).toBe(TEST_CONFIG_OB.tenant);
+        expect((db as OBDatabase).tenant).toBe(DEFAULT_TENANT);
 
         // Cleanup
         await obAdminClient.deleteDatabase(testDbName);
@@ -403,7 +402,7 @@ describe("AdminClient Database Management", () => {
       // Verify all databases have the correct tenant (Server mode)
       for (const db of databases) {
         expect(db).toBeInstanceOf(OBDatabase);
-        expect((db as OBDatabase).tenant).toBe(TEST_CONFIG_OB.tenant);
+        expect((db as OBDatabase).tenant).toBe(DEFAULT_TENANT);
         expect(db.name).toBeDefined();
         expect(db.charset).toBeDefined();
         expect(db.collation).toBeDefined();

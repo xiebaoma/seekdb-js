@@ -37,10 +37,51 @@ For complete usage, please refer to the official documentation.
 npm install seekdb @seekdb/default-embed
 ```
 
-- **Embedded mode**: No server required; use locally. Native addon is loaded on first use (optional dependency or on-demand download). Data is stored under the `path` you provide (e.g. `./seekdb.db`).
-- **Server mode**: Deploy seekdb or OceanBase first; see [official deployment documentation](https://www.oceanbase.ai/docs/deploy-overview/).
+- **Embedded mode**: No seekdb server deployment required; use locally after install.
+- **Server mode**: Deploy seekdb or OceanBase first; see [official deployment docs](https://www.oceanbase.ai/docs/deploy-overview/).
+
+## Running Modes
+
+The SDK supports two modes; the constructor arguments to `SeekdbClient` determine which is used. For database management (create/list/get/delete database), use `AdminClient()` which returns a `SeekdbClient` instance.
+
+| Mode         | Parameter                                     | Description                                                                                                                                         |
+| ------------ | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Embedded** | `path` (database directory path)              | Runs locally with no separate seekdb server; data is stored under the given path (e.g. `./seekdb.db`). Requires native addon `@seekdb/js-bindings`. |
+| **Server**   | `host` (and `port`, `user`, `password`, etc.) | Connects to a remote seekdb or OceanBase instance.                                                                                                  |
+
+**OceanBase and seekdb**: OceanBase is compatible with seekdb and can be understood as its distributed, multi-tenant, etc. version. seekdb-js therefore supports **OceanBase server mode** with the same API: use the same `SeekdbClient` / `AdminClient` and connection parameters; when connecting to OceanBase, additionally pass `tenant` (e.g. `"sys"` or your tenant name). See [OceanBase mode](#oceanbase-mode-server-mode-with-tenant) below.
+
+- **SeekdbClient**: Pass `path` for embedded mode, or `host` (and port, user, password, etc.) for server mode.
+- **AdminClient()**: For admin operations only; pass `path` for embedded or `host` for server. In embedded mode you do not specify a database name.
 
 ## Quick Start
+
+**Embedded mode** (local file, no server):
+
+```typescript
+import { SeekdbClient } from "seekdb";
+
+// 1. Connect
+const client = new SeekdbClient({
+  path: "./seekdb.db",
+  database: "test",
+});
+
+// 2. Create collection
+const collection = await client.createCollection({ name: "my_collection" });
+
+// 3. Add data (auto-vectorized using @seekdb/default-embed)
+await collection.add({
+  ids: ["1", "2"],
+  documents: ["Hello world", "seekdb is fast"],
+});
+
+// 4. Search
+const results = await collection.query({ queryTexts: "Hello", nResults: 5 });
+console.log("query results", results);
+```
+
+**Server mode** (connect to a deployed seekdb):
 
 ```typescript
 import { SeekdbClient } from "seekdb";
@@ -64,19 +105,26 @@ await collection.add({
 });
 
 // 4. Search
-const results = await collection.query({
-  queryTexts: "Hello",
-  nResults: 5,
-});
-
+const results = await collection.query({ queryTexts: "Hello", nResults: 5 });
 console.log("query results", results);
 ```
 
 ## Usage Guide
 
-> This section shows the most basic usage. For details, please refer to the [official SDK documentation](https://www.oceanbase.ai/docs/seekdb-js-get-started).
+This section covers basic usage. See the [official SDK documentation](https://www.oceanbase.ai/docs/seekdb-js-get-started) for full details.
 
 ### Client Connection
+
+**Embedded mode** (local database file):
+
+```typescript
+import { SeekdbClient } from "seekdb";
+
+const client = new SeekdbClient({
+  path: "./seekdb.db", // database file path
+  database: "test",
+});
+```
 
 **Server mode**:
 
@@ -89,29 +137,25 @@ const client = new SeekdbClient({
   user: "root",
   password: "",
   database: "test",
-  // Required for OceanBase mode
-  // tenant: "sys",
 });
 ```
 
-**Embedded mode**:
+**OceanBase mode** (server mode with tenant): OceanBase is compatible with seekdb (distributed, multi-tenant, etc.). Use the same server-mode connection; when the backend is OceanBase, pass `tenant` (e.g. `"sys"` or your tenant name):
 
 ```typescript
-import { SeekdbClient } from "seekdb";
-
 const client = new SeekdbClient({
-  path: "./seekdb.db",
+  host: "127.0.0.1",
+  port: 2881,
+  user: "root",
+  password: "",
   database: "test",
+  tenant: "sys", // or your OceanBase tenant
 });
 ```
 
 ### Create Collection
 
-If you don't specify an embedding function, the default embedding function will be used for vectorization. Please install `@seekdb/default-embed`.
-
-```bash
-npm install @seekdb/default-embed
-```
+You can create a collection without any configuration; the default embedding function will be used for vectorization. Ensure `@seekdb/default-embed` is installed first.
 
 ```typescript
 const collection = await client.createCollection({
@@ -119,7 +163,45 @@ const collection = await client.createCollection({
 });
 ```
 
-If you need to use a specific embedding function, you can install and use the embedding functions we provide, or implement your own. For details, please refer to the [official SDK documentation](https://www.oceanbase.ai/docs/seekdb-js-get-started).
+#### Schema API
+
+A schema defines which indexes are available on a collection:
+
+- **FulltextIndexConfig** - For keyword-based full-text search
+- **VectorIndexConfig** - For dense vector similarity search
+- **SparseVectorIndexConfig** - For sparse vector similarity search
+
+Examples for creating the three index types:
+
+**FulltextIndexConfig**
+
+```typescript
+const schema = new Schema({
+  fulltextIndex: new FulltextIndexConfig("ik", { ik_mode: "smart" }),
+});
+const collection = await client.createCollection({
+  name: "ft_collection",
+  schema,
+});
+```
+
+**VectorIndexConfig**
+
+If you do not set `embeddingFunction`, the default embedding function is used. Ensure `@seekdb/default-embed` is installed.
+
+```typescript
+const schema = new Schema({
+  vectorIndex: new VectorIndexConfig({
+    hnsw: { dimension: 384, distance: "cosine" },
+  }),
+});
+const collection = await client.createCollection({
+  name: "vec_collection",
+  schema,
+});
+```
+
+To use a custom embedding function, install one of the provided packages or implement your own. See the [official SDK documentation](https://www.oceanbase.ai/docs/seekdb-js-get-started) for details.
 
 Take `@seekdb/qwen` as an example:
 
@@ -131,24 +213,63 @@ npm install @seekdb/qwen
 import { QwenEmbeddingFunction } from "@seekdb/qwen";
 
 const qwenEF = new QwenEmbeddingFunction();
+
+const schema = new Schema({
+  vectorIndex: new VectorIndexConfig({
+    hnsw: { dimension: 384, distance: "cosine" },
+    embeddingFunction: qwenEF,
+  }),
+});
+
 const collection = await client.createCollection({
   name: "my_collection",
-  embeddingFunction: qwenEF,
+  schema,
 });
 ```
 
 If you don't need an embedding function, set `embeddingFunction` to `null`.
 
 ```typescript
+const schema = new Schema({
+  vectorIndex: new VectorIndexConfig({
+    hnsw: { dimension: 384, distance: "cosine" },
+    embeddingFunction: null,
+  }),
+});
 const collection = await client.createCollection({
-  name: "my_collection",
-  embeddingFunction: null,
+  name: "vec_collection",
+  schema,
+});
+```
+
+**SparseVectorIndexConfig**
+
+You can use the provided `@seekdb/bm25` as the sparse embedding function or implement your own.
+
+```bash
+npm install @seekdb/bm25
+```
+
+```typescript
+import { Bm25EmbeddingFunction } from "@seekdb/bm25";
+import { K } from "seekdb";
+
+const schema = new Schema({
+  sparseVectorIndex: new SparseVectorIndexConfig({
+    sourceKey: K.DOCUMENT,
+    embeddingFunction: new Bm25EmbeddingFunction(),
+  }),
+});
+
+const collection = await client.createCollection({
+  name: "sparse_collection",
+  schema,
 });
 ```
 
 ### Add Data
 
-The embedding function defined in `createCollection` is used automatically for vectorization. No need to set it again.
+The embedding function defined in `Schema` is used automatically for vectorization. No need to set it again.
 
 ```typescript
 await collection.add({
@@ -189,7 +310,7 @@ const results = await collection.get({
 
 The `query()` method is used to execute vector similarity search to find documents most similar to the query vector.
 
-The embedding function defined in `createCollection` is used automatically for vectorization. No need to set it again.
+The embedding function defined in `Schema` is used automatically for vectorization. No need to set it again.
 
 ```typescript
 const results = await collection.query({
@@ -206,6 +327,32 @@ const results = await collection.query({
     [0.1, 0.2, 0.3],
     [0.2, 0.3, 0.4],
   ],
+  nResults: 5,
+});
+```
+
+Specify `queryKey` to run sparse vector search. If a sparse embedding function is defined, `queryTexts` will be vectorized automatically.
+
+```typescript
+import
+import { K } from "seekdb";
+
+const results = await collection.query({
+  queryTexts: "artificial intelligence",
+  // Use sparse vector index, default by K.DOCUMENT
+  queryKey: K.DOCUMENT,
+  nResults: 3,
+});
+```
+
+You can also supply your own sparse vectors for search.
+
+```typescript
+const queryVector: SparseVector = { 1234: 0.5, 5678: 0.8 };
+
+const results = await collection.query({
+  queryEmbeddings: queryVector,
+  queryKey: "sparseEmbedding",
   nResults: 5,
 });
 ```
@@ -241,7 +388,7 @@ const hybridResults = await collection.hybridSearch({
 
 The SDK supports multiple Embedding Functions for generating vectors locally or in the cloud.
 
-For complete usage, please refer to the official documentation.
+For complete usage, see the official documentation.
 
 #### Default Embedding
 
@@ -394,6 +541,100 @@ const collection = await client.createCollection({
 });
 ```
 
+### BM25 Sparse Embedding
+
+BM25 (Best Matching 25) is a sparse embedding function that uses term frequency and document length normalization for efficient text search. It's particularly useful for keyword-based search scenarios.
+
+```bash
+npm install @seekdb/bm25
+```
+
+```typescript
+import { SeekdbClient, Schema, SparseVectorIndexConfig, K } from "seekdb";
+import { Bm25EmbeddingFunction } from "@seekdb/bm25";
+
+const bm25 = new Bm25EmbeddingFunction({
+  k: 1.2, // Term frequency saturation
+  b: 0.75, // Document length normalization
+  avgDocLength: 256, // Average document length
+  tokenMaxLength: 40, // Maximum token length
+  stopwords: ["a", "an", "the"], // Custom stopwords
+});
+
+const collection = await client.createCollection({
+  name: "bm25_collection",
+  schema: new Schema({
+    sparseVectorIndex: new SparseVectorIndexConfig({
+      sourceKey: K.DOCUMENT,
+      embeddingFunction: bm25,
+    }),
+  }),
+});
+```
+
+For more details, see [BM25 Embedding Guide](./docs/bm25-embedding-guide.md).
+
+#### Custom Sparse Embedding Function
+
+Implement your own sparse embedding function:
+
+```typescript
+import {
+  SparseEmbeddingFunction,
+  SparseVector,
+  registerSparseEmbeddingFunction,
+  EmbeddingConfig,
+} from "seekdb";
+
+interface MySparseConfig {
+  vocabSize: number;
+}
+
+class MySparseEmbeddingFunction implements SparseEmbeddingFunction {
+  readonly name = "my_sparse";
+  private vocabSize: number;
+
+  constructor(config: MySparseConfig) {
+    this.vocabSize = config.vocabSize;
+  }
+
+  // Implement your vector generation code here
+  async generate(texts: string[]): Promise<SparseVector[]> {
+    const embeddings: number[][] = [];
+    return embeddings;
+  }
+
+  // Generate sparse vectors for queries (can be different)
+  async generateForQueries(texts: string[]): Promise<SparseVector[]> {
+    return this.generate(texts);
+  }
+
+  // Return configuration for persistence
+  getConfig(): EmbeddingConfig {
+    return { vocabSize: this.vocabSize };
+  }
+
+  // Static factory method
+  static buildFromConfig(config: EmbeddingConfig): SparseEmbeddingFunction {
+    return new MySparseEmbeddingFunction(config as MySparseConfig);
+  }
+}
+
+// Register the function
+registerSparseEmbeddingFunction("my_sparse", MySparseEmbeddingFunction);
+
+// Use it
+const collection = await client.createCollection({
+  name: "my_sparse_collection",
+  schema: {
+    sparseVectorIndex: new SparseVectorIndexConfig({
+      sourceKey: K.DOCUMENT,
+      embeddingFunction: new MySparseEmbeddingFunction({ vocabSize: 100000 }),
+    }),
+  },
+});
+```
+
 ### Vector search + relational tables
 
 You can combine vector (or hybrid) search with relational tables: run `collection.query()` or `collection.hybridSearch()` to get `ids`, then query your relational table by those ids. For type-safe relational queries, prefer an ORM (see [Integration with ORM](#integration-with-orm)); here is a raw-SQL recipe.
@@ -532,6 +773,19 @@ await prisma.$disconnect();
 
 Use `AdminClient()` for database management. It returns a `SeekdbClient` instance. In **embedded mode** you only pass `path`; no database name is required.
 
+**Embedded mode** (local database file):
+
+```typescript
+import { AdminClient } from "seekdb";
+
+const admin = AdminClient({ path: "./seekdb.db" });
+await admin.createDatabase("new_database");
+const databases = await admin.listDatabases();
+const db = await admin.getDatabase("new_database");
+await admin.deleteDatabase("new_database");
+await admin.close();
+```
+
 **Server mode**:
 
 ```typescript
@@ -542,8 +796,6 @@ const admin = AdminClient({
   port: 2881,
   user: "root",
   password: "",
-  // Required for OceanBase mode
-  // tenant: "sys"
 });
 
 await admin.createDatabase("new_database");
@@ -553,12 +805,17 @@ await admin.deleteDatabase("new_database");
 await admin.close();
 ```
 
-**Embedded mode** (no server):
+**OceanBase mode** (server mode with tenant): add `tenant` (e.g. `"sys"` or your tenant name) to the config:
 
 ```typescript
-import { AdminClient } from "seekdb";
+const admin = AdminClient({
+  host: "127.0.0.1",
+  port: 2881,
+  user: "root",
+  password: "",
+  tenant: "sys", // or your OceanBase tenant
+});
 
-const admin = AdminClient({ path: "./seekdb.db" });
 await admin.createDatabase("new_database");
 const databases = await admin.listDatabases();
 const db = await admin.getDatabase("new_database");
